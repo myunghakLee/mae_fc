@@ -62,7 +62,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             self.linear_k = torch.nn.Linear(embed_dim, 64)
 
             att_context_size = 1
-            batch_size = 512  # TODO: change dynamically
+            batch_size = 1024  # TODO: change dynamically
             x_axis_size = 14  # TODO: change dynamically
             att_mask = torch.ones(batch_size, x_axis_size*x_axis_size, x_axis_size*x_axis_size)
             att_mask = att_mask.triu(diagonal=-att_context_size)
@@ -217,6 +217,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         elif self.aggregation == 'attention':
             # attention mask (2-dimensional)
             self.att_mask = self.att_mask.to(x.device)
+            
             att_mask = self.att_mask.gather(1, indices_wo_cls.unsqueeze(-1).expand(-1, -1, self.att_mask.size(-1)))  # (B, T', T)
             # cls token pad to attention mask
             att_mask = torch.cat([torch.zeros((att_mask.size(0), att_mask.size(1), 1), device = att_mask.device, dtype = att_mask.dtype), att_mask], dim=2)
