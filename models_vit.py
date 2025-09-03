@@ -22,7 +22,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """
     def __init__(self, global_pool=False, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
-
+        # self.pos_drop = nn.Dropout(p=0.0)  # 최근 ViT에서는 pos drop을 0.0으로 둠
         max_pruning_ratio = 0.5
         # dynamic subsampling
         codebook_size = 32
@@ -62,7 +62,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             self.linear_k = torch.nn.Linear(embed_dim, 64)
 
             att_context_size = 1
-            batch_size = 1024  # TODO: change dynamically
+            batch_size = 4  # TODO: change dynamically
             x_axis_size = 14  # TODO: change dynamically
             att_mask = torch.ones(batch_size, x_axis_size*x_axis_size, x_axis_size*x_axis_size)
             att_mask = att_mask.triu(diagonal=-att_context_size)
@@ -95,7 +95,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
         cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
         x = torch.cat((cls_tokens, x), dim=1)
-        x = x + self.pos_embed
+        # x = x + self.pos_embed
 
         if print_option:
             print("x size before: ", x.size())
@@ -216,29 +216,32 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
         elif self.aggregation == 'attention':
             # attention mask (2-dimensional)
-            self.att_mask = self.att_mask.to(x.device)
-            
+            self.att_mask = self.att_mask.to(x.device)  # (B, T, T)
+            print("\n\n\n\n\nself.att_mask.shape: ", self.att_mask.shape)
+            print("indices_wo_cls: ", indices_wo_cls.shape)
             att_mask = self.att_mask.gather(1, indices_wo_cls.unsqueeze(-1).expand(-1, -1, self.att_mask.size(-1)))  # (B, T', T)
-            # cls token pad to attention mask
-            att_mask = torch.cat([torch.zeros((att_mask.size(0), att_mask.size(1), 1), device = att_mask.device, dtype = att_mask.dtype), att_mask], dim=2)
-            att_mask = torch.cat([torch.ones((att_mask.size(0), 1, att_mask.size(2)), device = att_mask.device, dtype = att_mask.dtype), att_mask], dim=1)
 
+            # cls token pad to attention mask
+            att_mask = torch.cat([torch.zeros((att_mask.size(0), att_mask.size(1), 1), device = att_mask.device, dtype = att_mask.dtype), att_mask], dim=2)  # (B, T', T + 1)
+            att_mask = torch.cat([torch.ones((att_mask.size(0), 1, att_mask.size(2)), device = att_mask.device, dtype = att_mask.dtype), att_mask], dim=1)  # (B, T' + 1, T + 1)
             if print_option:
                 print('att_mask.size():', att_mask.size())
                 print('att_mask:', att_mask.to(torch.int))
 
             # x size: B, T, F
-            q = self.linear_q(x)
-            k = self.linear_k(x_before_pruning)
-            attn = torch.matmul(q, k.transpose(-2, -1)) / (k.size(-1)**0.5)
-            attn = attn.masked_fill((att_mask==0), float('-inf'))   # (B, T, T) masked attention score
+            q = self.linear_q(x)  # x: (B, T' + 1, 768) q: (B, T' + 1, 64)
+            k = self.linear_k(x_before_pruning)  # x_before_pruning: (B, T + 1, 768) k: (B, T + 1, 64)
+
+            attn = torch.matmul(q, k.transpose(-2, -1)) / (k.size(-1)**0.5)  # (B, T' + 1, T + 1)
+            attn = attn.masked_fill((att_mask==0), float('-inf'))   # masked attention score (B, T' + 1, T + 1)
             attn = attn.softmax(dim=-1)
-            x = torch.matmul(attn, x_before_pruning)                # (B, T, F)
+
+            x = torch.matmul(attn, x_before_pruning)                # (B, T' + 1, 768)
 
         else:
             raise NotImplementedError(f"Energy function {self.energy_function} is not implemented.")
 
-
+        x = x + self.pos_embed
         x = self.pos_drop(x)
 
         for blk in self.blocks:
