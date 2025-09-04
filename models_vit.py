@@ -20,7 +20,7 @@ import timm.models.vision_transformer
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
     """
-    def __init__(self, global_pool=False, **kwargs):
+    def __init__(self, global_pool=False, batch_size=1024, **kwargs):
         super(VisionTransformer, self).__init__(**kwargs)
         # self.pos_drop = nn.Dropout(p=0.0)  # 최근 ViT에서는 pos drop을 0.0으로 둠
         max_pruning_ratio = 0.5
@@ -62,17 +62,17 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             self.linear_k = torch.nn.Linear(embed_dim, 64)
 
             att_context_size = 1
-            batch_size = 4  # TODO: change dynamically
+            self.batch_size = batch_size
             x_axis_size = 14  # TODO: change dynamically
-            att_mask = torch.ones(batch_size, x_axis_size*x_axis_size, x_axis_size*x_axis_size)
+            att_mask = torch.ones(self.batch_size, x_axis_size*x_axis_size, x_axis_size*x_axis_size)
             att_mask = att_mask.triu(diagonal=-att_context_size)
             att_mask = att_mask.tril(diagonal=att_context_size)
 
-            att_mask_a = torch.ones(batch_size, x_axis_size*x_axis_size, x_axis_size*x_axis_size)
+            att_mask_a = torch.ones(self.batch_size, x_axis_size*x_axis_size, x_axis_size*x_axis_size)
             att_mask_a = att_mask_a.triu(diagonal=-att_context_size*x_axis_size)
             att_mask_a = att_mask_a.tril(diagonal=att_context_size*x_axis_size)
 
-            att_mask_b = torch.ones(batch_size, x_axis_size*x_axis_size, x_axis_size*x_axis_size)
+            att_mask_b = torch.ones(self.batch_size, x_axis_size*x_axis_size, x_axis_size*x_axis_size)
             att_mask_b = att_mask_b.triu(diagonal=-x_axis_size)
             att_mask_b = att_mask_b.tril(diagonal=x_axis_size)
 
