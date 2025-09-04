@@ -62,7 +62,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             self.linear_k = torch.nn.Linear(embed_dim, 64)
 
             att_context_size = 1
-            batch_size = 1024  # TODO: change dynamically
+            batch_size = 4  # TODO: change dynamically
             x_axis_size = 14  # TODO: change dynamically
             att_mask = torch.ones(batch_size, x_axis_size*x_axis_size, x_axis_size*x_axis_size)
             att_mask = att_mask.triu(diagonal=-att_context_size)
@@ -196,6 +196,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             x_before_pruning = x.clone()
 
         indices, _ = indices[:, :state_to_remain].sort(dim=1, descending=False)
+
         x = x.gather(1, indices.unsqueeze(-1).expand(-1, -1, x.size(-1)))
         indices_wo_cls = indices[:, 1:] - 1
 
@@ -209,16 +210,12 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
                     momentum = 0.99
                     self.energy_threshold.mul_(momentum).add_((1 - momentum) * estimated_threshold.detach())
 
-
-
         if self.aggregation == "cnn":
             pass
 
         elif self.aggregation == 'attention':
             # attention mask (2-dimensional)
             self.att_mask = self.att_mask.to(x.device)  # (B, T, T)
-            print("\n\n\n\n\nself.att_mask.shape: ", self.att_mask.shape)
-            print("indices_wo_cls: ", indices_wo_cls.shape)
             att_mask = self.att_mask.gather(1, indices_wo_cls.unsqueeze(-1).expand(-1, -1, self.att_mask.size(-1)))  # (B, T', T)
 
             # cls token pad to attention mask
@@ -241,7 +238,11 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         else:
             raise NotImplementedError(f"Energy function {self.energy_function} is not implemented.")
 
-        x = x + self.pos_embed
+        # pos_embed = self.pos_embed[:, indices, :]
+        # pos_embed = self.pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, x.size(-1)))
+        pos_embed = self.pos_embed.expand(B, -1, -1)
+        pos_embed = pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, pos_embed.size(-1)))
+        x = x + pos_embed
         x = self.pos_drop(x)
 
         for blk in self.blocks:
