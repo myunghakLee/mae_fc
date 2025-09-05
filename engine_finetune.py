@@ -56,14 +56,19 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             outputs = model(samples)
             loss = criterion(outputs, targets)
             if not math.isfinite(loss):
-                print("Loss is {}, stopping training".format(loss_value))
+                print("Loss is {}, stopping training".format(loss))
                 has_nan = torch.isnan(outputs).any().item()
                 num_nan = torch.isnan(outputs).sum().item()
                 print("Outputs contain NaN: {}, num_nan: {}".format(has_nan, num_nan))
 
                 import json
                 with open("loss_output.json", "w") as f:
-                    json.dump({"loss": loss.item(), "has_nan": has_nan, "num_nan": num_nan, "outputs" : outputs.detach().cpu().numpy().tolist()}, f)
+                    json.dump({"loss": loss.item(), 
+                               "has_nan": has_nan, 
+                               "num_nan": num_nan, 
+                               "outputs" : outputs.detach().cpu().numpy().tolist(),
+                               "targets": targets.detach().cpu().numpy().tolist()
+                               }, f)
                 sys.exit(1)
 
             if hasattr(model, 'get_energy_function_loss'):
@@ -76,8 +81,14 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         if state_prediction_loss_sum is not None:
             if torch.randperm(1000)[0] == 0 and torch.cuda.current_device() == 0:
                 pass
+            
+            metric_logger.update(state_pred_loss=state_prediction_loss_sum.item())
+            metric_logger.update(ent_maxima_loss=entropy_maximization_loss_sum.item())
+            metric_logger.update(cls_loss=loss.item())
 
-            loss = loss + 0.01 * state_prediction_loss_sum + 0.02 * entropy_maximization_loss_sum
+            # 학습 시작점 기준
+            # state_pred_loss: 684.6740 (684.6740)  ent_maxima_loss: -42.2249 (-42.2249)  cls_loss: 6.9079 (6.9079)  loss: 12.9101 (12.9101)  
+            loss = loss + 0.01 * state_prediction_loss_sum + 0.1 * entropy_maximization_loss_sum
             
 
         loss_value = loss.item()
