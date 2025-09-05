@@ -77,7 +77,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                 state_prediction_loss_sum, entropy_maximization_loss_sum = model.module.get_energy_function_loss()
             else:
                 raise ValueError('model: ', model)
-
+            entropy_maximization_loss_sum /= args.batch_size
         if state_prediction_loss_sum is not None:
             if torch.randperm(1000)[0] == 0 and torch.cuda.current_device() == 0:
                 pass
@@ -88,7 +88,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
             # 학습 시작점 기준
             # state_pred_loss: 684.6740 (684.6740)  ent_maxima_loss: -42.2249 (-42.2249)  cls_loss: 6.9079 (6.9079)  loss: 12.9101 (12.9101)  
-            loss = loss + 0.01 * state_prediction_loss_sum + 0.1 * entropy_maximization_loss_sum
+            loss = loss + 0.01 * state_prediction_loss_sum + 1.0 * entropy_maximization_loss_sum
             
 
         loss_value = loss.item()
