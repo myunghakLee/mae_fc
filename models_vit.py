@@ -15,7 +15,7 @@ import torch
 import torch.nn as nn
 import math
 import timm.models.vision_transformer
-
+import sys
 
 class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
     """ Vision Transformer with support for global average pooling
@@ -262,6 +262,13 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         if self.state_prediction_loss is not None and self.entropy_maximization_loss is not None:
             self.entropy_maximization_loss = self.entropy_maximization_loss.sum()
             self.state_prediction_loss = self.state_prediction_loss.sum(-1).mean()
+            if torch.isnan(self.state_prediction_loss):
+                print("state_prediction_loss is nan")
+                sys.exit(1)
+            if torch.isnan(self.entropy_maximization_loss):
+                print("entropy_maximization_loss is nan")
+                sys.exit(1)
+
             return self.state_prediction_loss, self.entropy_maximization_loss
 
         else:

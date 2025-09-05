@@ -55,6 +55,16 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         with torch.cuda.amp.autocast():
             outputs = model(samples)
             loss = criterion(outputs, targets)
+            if not math.isfinite(loss):
+                print("Loss is {}, stopping training".format(loss_value))
+                has_nan = torch.isnan(outputs).any().item()
+                num_nan = torch.isnan(outputs).sum().item()
+                print("Outputs contain NaN: {}, num_nan: {}".format(has_nan, num_nan))
+
+                import json
+                with open("loss_output.json", "w") as f:
+                    json.dump({"loss": loss.item(), "has_nan": has_nan, "num_nan": num_nan, "outputs" : outputs.detach().cpu().numpy().tolist()}, f)
+                sys.exit(1)
 
             if hasattr(model, 'get_energy_function_loss'):
                 state_prediction_loss_sum, entropy_maximization_loss_sum = model.get_entropy_function_loss()
