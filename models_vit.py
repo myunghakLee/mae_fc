@@ -172,11 +172,14 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
 
             if self.locality_constraint:
+
+
                 odd_even = torch.randint(0, 2, (1,)).item()
                 locality_mask = torch.arange(x_wo_aug.size(1), device=x.device)
                 locality_mask = (locality_mask.view(x_axis_size, x_axis_size) + locality_mask.view(x_axis_size, x_axis_size).transpose(0,1)) % 2 == odd_even
                 locality_mask = locality_mask.view(-1).unsqueeze(0)
-                self.energy = self.energy.masked_fill(locality_mask, float("inf"))
+                INF = torch.finfo(self.energy.dtype).max
+                self.energy = self.energy.masked_fill(locality_mask, INF)
 
 
             # Stage6: prune the states
@@ -215,6 +218,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
         elif self.aggregation == 'attention':
             # attention mask (2-dimensional)
+
             self.att_mask = self.att_mask.to(x.device)  # (B, T, T)
             att_mask = self.att_mask.gather(1, indices_wo_cls.unsqueeze(-1).expand(-1, -1, self.att_mask.size(-1)))  # (B, T', T)
 
@@ -230,7 +234,9 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             k = self.linear_k(x_before_pruning)  # x_before_pruning: (B, T + 1, 768) k: (B, T + 1, 64)
 
             attn = torch.matmul(q, k.transpose(-2, -1)) / (k.size(-1)**0.5)  # (B, T' + 1, T + 1)
-            attn = attn.masked_fill((att_mask==0), float('-inf'))   # masked attention score (B, T' + 1, T + 1)
+            NEG_INF = torch.finfo(attn.dtype).min
+
+            attn = attn.masked_fill((att_mask==0), NEG_INF)   # masked attention score (B, T' + 1, T + 1)
             attn = attn.softmax(dim=-1)
 
             x = torch.matmul(attn, x_before_pruning)                # (B, T' + 1, 768)
@@ -242,6 +248,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         # pos_embed = self.pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, x.size(-1)))
         pos_embed = self.pos_embed.expand(B, -1, -1)
         pos_embed = pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, pos_embed.size(-1)))
+
         x = x + pos_embed
         x = self.pos_drop(x)
 
