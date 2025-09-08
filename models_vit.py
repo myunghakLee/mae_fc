@@ -247,9 +247,15 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
                 print("q is nan")
             if torch.isnan(k).any():
                 print("k is nan")
+            if torch.isinf(quit).any():
+                print("q is inf 1")
+            if torch.isinf(atktn).any():
+                print("k is inf 1")
             attn = torch.matmul(q, k.transpose(-2, -1)) / (k.size(-1)**0.5)  # (B, T' + 1, T + 1)
             if torch.isnan(attn).any():
                 print("attn is nan 1")
+            if torch.isinf(attn).any():
+                print("attn is inf 1")
             NEG_INF = torch.finfo(attn.dtype).min + 1
 
             
@@ -257,6 +263,8 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             before_softmax = attn.clone()  # TODO: REMOVE THIS LINE
             if torch.isnan(attn).any():
                 print("attn is nan 2")
+            if torch.isinf(attn).any():
+                print("attn is inf 2")
             attn = attn.softmax(dim=-1)
             if torch.isnan(attn).any():
                 print("attn is nan 3")
