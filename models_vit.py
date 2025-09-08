@@ -51,6 +51,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         self.eps = 1e-10
         self.state_prediction_loss = None
         self.entropy_maximization_loss = None
+        self.l2_regularization_loss = None
         self.locality_constraint = locality_constraint
         self.aggregation = aggregation
 
@@ -243,51 +244,52 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             # x size: B, T, F
             q = self.linear_q(x)  # x: (B, T' + 1, 768) q: (B, T' + 1, 64)
             k = self.linear_k(x_before_pruning)  # x_before_pruning: (B, T + 1, 768) k: (B, T + 1, 64)
-            if torch.isnan(q).any():
-                print("q is nan")
-            if torch.isnan(k).any():
-                print("k is nan")
-            if torch.isinf(q).any():
-                print("q is inf 1")
-            if torch.isinf(k).any():
-                print("k is inf 1")
+            # if torch.isnan(q).any():
+            #     print("q is nan")
+            # if torch.isnan(k).any():
+            #     print("k is nan")
+            # if torch.isinf(q).any():
+            #     print("q is inf 1")
+            # if torch.isinf(k).any():
+            #     print("k is inf 1")
             attn = torch.matmul(q, k.transpose(-2, -1)) / (k.size(-1)**0.5)  # (B, T' + 1, T + 1)
-            if torch.isnan(attn).any():
-                print("attn is nan 1")
-            if torch.isinf(attn).any():
-                print("attn is inf 1")
+            # if torch.isnan(attn).any():
+            #     print("attn is nan 1")
+            # if torch.isinf(attn).any():
+            #     print("attn is inf 1")
+            self.l2_regularization_loss = (attn**2).mean()
             NEG_INF = torch.finfo(attn.dtype).min + 1
 
             
             attn = attn.masked_fill((att_mask==0), NEG_INF)   # masked attention score (B, T' + 1, T + 1)
-            before_softmax = attn.clone()  # TODO: REMOVE THIS LINE
-            if torch.isnan(attn).any():
-                print("attn is nan 2")
-            if torch.isinf(attn).any():
-                print("attn is inf 2")
+            # before_softmax = attn.clone()  # TODO: REMOVE THIS LINE
+            # if torch.isnan(attn).any():
+            #     print("attn is nan 2")
+            # if torch.isinf(attn).any():
+            #     print("attn is inf 2")
             attn = attn.softmax(dim=-1)
-            if torch.isnan(attn).any():
-                print("attn is nan 3")
+            # if torch.isnan(attn).any():
+            #     print("attn is nan 3")
 
-            if torch.isnan(x).any():
-                print("x is nan before matmul with attn")
+            # if torch.isnan(x).any():
+            #     print("x is nan before matmul with attn")
             x = torch.matmul(attn, x_before_pruning)                # (B, T' + 1, 768)
-            if torch.isnan(x).any():
-                print("x is nan after matmul with attn")
-                print("random_pruning_ratio: ", random_pruning_ratio)
-                print("self.max_pruning_ratio: ", self.max_pruning_ratio)
-                print("x.size(1): ", x.size(1))
-                print("state_to_remain : ", state_to_remain)
-                import json
-                with open("debug_nan.json", "w") as f:
-                    json.dump({
-                            #    "before_softmax" : before_softmax.detach().cpu().numpy().tolist(),
-                            #    "attn": attn.detach().cpu().numpy().tolist(),
-                            #    "x_before_pruning": x_before_pruning.detach().cpu().numpy().tolist(),
-                            #    "x": x.detach().cpu().numpy().tolist(),
-                               "q": q.detach().cpu().numpy().tolist(),
-                               "k": k.detach().cpu().numpy().tolist(),
-                               }, f)
+            # if torch.isnan(x).any():
+            #     print("x is nan after matmul with attn")
+            #     print("random_pruning_ratio: ", random_pruning_ratio)
+            #     print("self.max_pruning_ratio: ", self.max_pruning_ratio)
+            #     print("x.size(1): ", x.size(1))
+            #     print("state_to_remain : ", state_to_remain)
+            #     import json
+            #     with open("debug_nan.json", "w") as f:
+            #         json.dump({
+            #                 #    "before_softmax" : before_softmax.detach().cpu().numpy().tolist(),
+            #                 #    "attn": attn.detach().cpu().numpy().tolist(),
+            #                 #    "x_before_pruning": x_before_pruning.detach().cpu().numpy().tolist(),
+            #                 #    "x": x.detach().cpu().numpy().tolist(),
+            #                    "q": q.detach().cpu().numpy().tolist(),
+            #                    "k": k.detach().cpu().numpy().tolist(),
+            #                    }, f)
 
                 
 
@@ -331,16 +333,17 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
     def get_energy_function_loss(self):
         if self.state_prediction_loss is not None and self.entropy_maximization_loss is not None:
-            self.entropy_maximization_loss = self.entropy_maximization_loss.sum()
+            self.entropy_maximization_loss = self.entropy_maximization_loss.mean()
             self.state_prediction_loss = self.state_prediction_loss.sum(-1).mean()
-            if torch.isnan(self.state_prediction_loss):
-                print("state_prediction_loss is nan")
-                sys.exit(1)
-            if torch.isnan(self.entropy_maximization_loss):
-                print("entropy_maximization_loss is nan")
-                sys.exit(1)
+            self.l2_regularization_loss = self.l2_regularization_loss.mean()
+            # if torch.isnan(self.state_prediction_loss):
+            #     print("state_prediction_loss is nan")
+            #     sys.exit(1)
+            # if torch.isnan(self.entropy_maximization_loss):
+            #     print("entropy_maximization_loss is nan")
+            #     sys.exit(1)
 
-            return self.state_prediction_loss, self.entropy_maximization_loss
+            return self.state_prediction_loss, self.entropy_maximization_loss, self.l2_regularization_loss
 
         else:
             return 0, 0
