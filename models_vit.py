@@ -91,10 +91,18 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
     def forward_features(self, x, print_option = False):
         B = x.shape[0]
+        if torch.isnan(x).any():
+            print("x is nan before patch_embed")
         x = self.patch_embed(x)
-
+        if torch.isnan(x).any():
+            print("x is nan after patch_embed")
+            
         cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+        if torch.isnan(cls_tokens).any():
+            print("cls_tokens is nan")
         x = torch.cat((cls_tokens, x), dim=1)
+        if torch.isnan(x).any():
+            print("x is nan after cat with cls_tokens")
         # x = x + self.pos_embed
 
         if print_option:
@@ -187,9 +195,12 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             indices = torch.cat([torch.zeros(indices.size(0), device=indices.device, dtype=indices.dtype).unsqueeze(-1), indices + 1], dim=1)
             if self.training:
                 random_pruning_ratio = torch.rand(1).item() * self.max_pruning_ratio
+                # print("random_pruning_ratio: ", random_pruning_ratio)
+                # print("self.max_pruning_ratio: ", self.max_pruning_ratio)
+                # print("x.size(1): ", x.size(1))
+                
             else:
                 random_pruning_ratio = self.max_pruning_ratio * 0.5
-
 
         state_to_remain = x.size(1) - int(random_pruning_ratio * x.size(1))
         if self.training:
@@ -232,24 +243,58 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             # x size: B, T, F
             q = self.linear_q(x)  # x: (B, T' + 1, 768) q: (B, T' + 1, 64)
             k = self.linear_k(x_before_pruning)  # x_before_pruning: (B, T + 1, 768) k: (B, T + 1, 64)
-
+            if torch.isnan(q).any():
+                print("q is nan")
+            if torch.isnan(k).any():
+                print("k is nan")
             attn = torch.matmul(q, k.transpose(-2, -1)) / (k.size(-1)**0.5)  # (B, T' + 1, T + 1)
-            NEG_INF = torch.finfo(attn.dtype).min
+            if torch.isnan(attn).any():
+                print("attn is nan 1")
+            NEG_INF = torch.finfo(attn.dtype).min + 1
 
+            
             attn = attn.masked_fill((att_mask==0), NEG_INF)   # masked attention score (B, T' + 1, T + 1)
+            if torch.isnan(attn).any():
+                print("attn is nan 2")
             attn = attn.softmax(dim=-1)
+            if torch.isnan(attn).any():
+                print("attn is nan 3")
 
+            if torch.isnan(x).any():
+                print("x is nan before matmul with attn")
             x = torch.matmul(attn, x_before_pruning)                # (B, T' + 1, 768)
+            if torch.isnan(x).any():
+                print("x is nan after matmul with attn")
+                print("random_pruning_ratio: ", random_pruning_ratio)
+                print("self.max_pruning_ratio: ", self.max_pruning_ratio)
+                print("x.size(1): ", x.size(1))
+                print("state_to_remain : ", state_to_remain)
+
+                
 
         else:
             raise NotImplementedError(f"Energy function {self.energy_function} is not implemented.")
 
         # pos_embed = self.pos_embed[:, indices, :]
         # pos_embed = self.pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, x.size(-1)))
-        pos_embed = self.pos_embed.expand(B, -1, -1)
-        pos_embed = pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, pos_embed.size(-1)))
+        # pos_embed = self.pos_embed(indices)
+        # pos_embed = pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, pos_embed.size(-1)))
+        if torch.isnan(self.pos_embed).any():
+            print("pos_embed is nan before posembed")
 
+        pos_embed = self.pos_embed.expand(B, -1, -1)
+        if torch.isnan(pos_embed).any():
+            print("pos_embed is nan before gather")
+        pos_embed = pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, pos_embed.size(-1)))
+        if torch.isnan(pos_embed).any():
+            print("pos_embed is nan after gather")
+
+        if torch.isnan(x).any():
+            print("x is nan before posembed")
         x = x + pos_embed
+        if torch.isnan(x).any():
+            print("x is nan after posembed")
+
         x = self.pos_drop(x)
 
         for blk in self.blocks:
