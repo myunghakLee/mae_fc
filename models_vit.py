@@ -254,6 +254,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
 
             
             attn = attn.masked_fill((att_mask==0), NEG_INF)   # masked attention score (B, T' + 1, T + 1)
+            before_softmax = attn.clone()  # TODO: REMOVE THIS LINE
             if torch.isnan(attn).any():
                 print("attn is nan 2")
             attn = attn.softmax(dim=-1)
@@ -269,6 +270,14 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
                 print("self.max_pruning_ratio: ", self.max_pruning_ratio)
                 print("x.size(1): ", x.size(1))
                 print("state_to_remain : ", state_to_remain)
+                import json
+                with open("debug_nan.json", "w") as f:
+                    json.dump({
+                               "before_softmax" : before_softmax.detach().cpu().numpy().tolist(),
+                               "attn": attn.detach().cpu().numpy().tolist(),
+                               "x_before_pruning": x_before_pruning.detach().cpu().numpy().tolist(),
+                               "x": x.detach().cpu().numpy().tolist(),
+                               }, f)
 
                 
 
