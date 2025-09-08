@@ -281,10 +281,12 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
                 import json
                 with open("debug_nan.json", "w") as f:
                     json.dump({
-                               "before_softmax" : before_softmax.detach().cpu().numpy().tolist(),
-                               "attn": attn.detach().cpu().numpy().tolist(),
-                               "x_before_pruning": x_before_pruning.detach().cpu().numpy().tolist(),
-                               "x": x.detach().cpu().numpy().tolist(),
+                            #    "before_softmax" : before_softmax.detach().cpu().numpy().tolist(),
+                            #    "attn": attn.detach().cpu().numpy().tolist(),
+                            #    "x_before_pruning": x_before_pruning.detach().cpu().numpy().tolist(),
+                            #    "x": x.detach().cpu().numpy().tolist(),
+                               "q": q.detach().cpu().numpy().tolist(),
+                               "k": k.detach().cpu().numpy().tolist(),
                                }, f)
 
                 
