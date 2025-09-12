@@ -83,12 +83,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             
 
             alpha = 0.01  # weight for state prediction loss
-            beta = 0.1  # weight for entropy maximization loss
-            gamma = 0.03  # weight for attention l2 regularization loss
+            beta = 0.0001  # weight for entropy maximization loss
+            gamma = 0.01  # weight for attention l2 regularization loss
 
-            metric_logger.update(state_pred_loss=state_prediction_loss_sum.item() * alpha)
-            metric_logger.update(ent_maxima_loss=entropy_maximization_loss_sum.item() * beta)
-            metric_logger.update(l2_reg_loss=l2_regularization_loss.item() * gamma)
+            metric_logger.update(state_pred_loss=state_prediction_loss_sum.item())
+            metric_logger.update(ent_maxima_loss=entropy_maximization_loss_sum.item())
+            metric_logger.update(l2_reg_loss=l2_regularization_loss.item())
             metric_logger.update(cls_loss=loss.item())
 
             loss = loss + alpha * state_prediction_loss_sum + beta * entropy_maximization_loss_sum + gamma * l2_regularization_loss

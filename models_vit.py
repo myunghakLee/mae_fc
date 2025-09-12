@@ -48,7 +48,7 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         self.energy_func3 = torch.nn.Linear(embed_dim, codebook_size)
         self.energy_func4 = torch.nn.Linear(embed_dim, codebook_size)
         self.kl_loss = torch.nn.KLDivLoss(reduction="none")
-        self.eps = 1e-10
+        self.eps = 1e-6
         self.state_prediction_loss = None
         self.entropy_maximization_loss = None
         self.l2_regularization_loss = None
@@ -91,22 +91,23 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             del self.norm  # remove the original norm
 
     def forward_features(self, x, print_option = False):
+        print_option = True
         B = x.shape[0]
-        if torch.isnan(x).any():
+        if print_option and torch.isnan(x).any():
             print("x is nan before patch_embed")
         x = self.patch_embed(x)
-        if torch.isnan(x).any():
+        if print_option and torch.isnan(x).any():
             print("x is nan after patch_embed")
             
         cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
-        if torch.isnan(cls_tokens).any():
+        if print_option and torch.isnan(cls_tokens).any():
             print("cls_tokens is nan")
         x = torch.cat((cls_tokens, x), dim=1)
-        if torch.isnan(x).any():
+        if print_option and torch.isnan(x).any():
             print("x is nan after cat with cls_tokens")
         # x = x + self.pos_embed
 
-        if print_option:
+        if print_option and torch.isnan(x).any():
             print("x size before: ", x.size())
 
     
@@ -123,6 +124,9 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             elif self.energy_function == "local_linear":
                 # Stage1: state estimation
                 state = self.state_vectors(x_wo_aug.requires_grad_(False))
+                # print(self.state_vectors.weight[0])
+                # print(self.state_vectors.bias[:10])
+                # print("+"*200)
                 state = torch.nn.functional.softmax(state, dim=-1)  # (B, T, C)
 
                 # Stage2: state prediction (vertical + horizontal)
@@ -167,9 +171,9 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
                 # Stage3: energy estimation
                 self.energy = torch.sum(self.kl_loss(torch.log(state_pred + self.eps), state), dim=-1)
 
-                if print_option:
-                    print("state:", torch.argmax(state, dim=-1)[0])
-                    print("pred :", torch.argmax(state_pred, dim=-1)[0])
+                # if print_option:
+                #     print("state:", torch.argmax(state, dim=-1)[0])
+                #     print("pred :", torch.argmax(state_pred, dim=-1)[0])
 
                 # Stage4: loss calculation
                 state_avg = torch.sum(state, dim=-1) / (T_wo + self.eps)
@@ -211,8 +215,14 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             x_before_pruning = x.clone()
 
         indices, _ = indices[:, :state_to_remain].sort(dim=1, descending=False)
-
         x = x.gather(1, indices.unsqueeze(-1).expand(-1, -1, x.size(-1)))
+        
+        pos_embed = self.pos_embed.expand(B, -1, -1)
+        if print_option and torch.isnan(pos_embed).any():
+            print("pos_embed is nan before gather")
+        # print("pos_embed: ", pos_embed.shape)
+        pos_embed = pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, pos_embed.size(-1)))
+
         indices_wo_cls = indices[:, 1:] - 1
 
         if self.training:
@@ -237,59 +247,58 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
             # cls token pad to attention mask
             att_mask = torch.cat([torch.zeros((att_mask.size(0), att_mask.size(1), 1), device = att_mask.device, dtype = att_mask.dtype), att_mask], dim=2)  # (B, T', T + 1)
             att_mask = torch.cat([torch.ones((att_mask.size(0), 1, att_mask.size(2)), device = att_mask.device, dtype = att_mask.dtype), att_mask], dim=1)  # (B, T' + 1, T + 1)
-            if print_option:
+            if print_option and torch.isnan(att_mask).any():
                 print('att_mask.size():', att_mask.size())
-                print('att_mask:', att_mask.to(torch.int))
 
             # x size: B, T, F
             q = self.linear_q(x)  # x: (B, T' + 1, 768) q: (B, T' + 1, 64)
             k = self.linear_k(x_before_pruning)  # x_before_pruning: (B, T + 1, 768) k: (B, T + 1, 64)
-            # if torch.isnan(q).any():
-            #     print("q is nan")
-            # if torch.isnan(k).any():
-            #     print("k is nan")
-            # if torch.isinf(q).any():
-            #     print("q is inf 1")
-            # if torch.isinf(k).any():
-            #     print("k is inf 1")
+            if print_option and torch.isnan(q).any():
+                print("q is nan")
+            if print_option and torch.isnan(k).any():
+                print("k is nan")
+            if print_option and torch.isinf(q).any():
+                print("q is inf 1")
+            if print_option and torch.isinf(k).any():
+                print("k is inf 1")
             attn = torch.matmul(q, k.transpose(-2, -1)) / (k.size(-1)**0.5)  # (B, T' + 1, T + 1)
-            # if torch.isnan(attn).any():
-            #     print("attn is nan 1")
-            # if torch.isinf(attn).any():
-            #     print("attn is inf 1")
+            if print_option and torch.isnan(attn).any():
+                print("attn is nan 1")
+            if print_option and torch.isinf(attn).any():
+                print("attn is inf 1")
             self.l2_regularization_loss = (attn**2).mean()
-            NEG_INF = torch.finfo(attn.dtype).min + 1
+            NEG_INF = torch.finfo(attn.dtype).min
 
             
             attn = attn.masked_fill((att_mask==0), NEG_INF)   # masked attention score (B, T' + 1, T + 1)
-            # before_softmax = attn.clone()  # TODO: REMOVE THIS LINE
-            # if torch.isnan(attn).any():
-            #     print("attn is nan 2")
-            # if torch.isinf(attn).any():
-            #     print("attn is inf 2")
+            before_softmax = attn.clone()  # TODO: REMOVE THIS LINE
+            if print_option and torch.isnan(attn).any():
+                print("attn is nan 2")
+            if print_option and torch.isinf(attn).any():
+                print("attn is inf 2")
             attn = attn.softmax(dim=-1)
-            # if torch.isnan(attn).any():
-            #     print("attn is nan 3")
+            if print_option and torch.isnan(attn).any():
+                print("attn is nan 3")
 
-            # if torch.isnan(x).any():
-            #     print("x is nan before matmul with attn")
+            if print_option and torch.isnan(x).any():
+                print("x is nan before matmul with attn")
             x = torch.matmul(attn, x_before_pruning)                # (B, T' + 1, 768)
-            # if torch.isnan(x).any():
-            #     print("x is nan after matmul with attn")
-            #     print("random_pruning_ratio: ", random_pruning_ratio)
-            #     print("self.max_pruning_ratio: ", self.max_pruning_ratio)
-            #     print("x.size(1): ", x.size(1))
-            #     print("state_to_remain : ", state_to_remain)
-            #     import json
-            #     with open("debug_nan.json", "w") as f:
-            #         json.dump({
-            #                 #    "before_softmax" : before_softmax.detach().cpu().numpy().tolist(),
-            #                 #    "attn": attn.detach().cpu().numpy().tolist(),
-            #                 #    "x_before_pruning": x_before_pruning.detach().cpu().numpy().tolist(),
-            #                 #    "x": x.detach().cpu().numpy().tolist(),
-            #                    "q": q.detach().cpu().numpy().tolist(),
-            #                    "k": k.detach().cpu().numpy().tolist(),
-            #                    }, f)
+            if print_option and torch.isnan(x).any():
+                print("x is nan after matmul with attn")
+                print("random_pruning_ratio: ", random_pruning_ratio)
+                print("self.max_pruning_ratio: ", self.max_pruning_ratio)
+                print("x.size(1): ", x.size(1))
+                print("state_to_remain : ", state_to_remain)
+                import json
+                with open("debug_nan.json", "w") as f:
+                    json.dump({
+                            #    "before_softmax" : before_softmax.detach().cpu().numpy().tolist(),
+                            #    "attn": attn.detach().cpu().numpy().tolist(),
+                            #    "x_before_pruning": x_before_pruning.detach().cpu().numpy().tolist(),
+                            #    "x": x.detach().cpu().numpy().tolist(),
+                               "q": q.detach().cpu().numpy().tolist(),
+                               "k": k.detach().cpu().numpy().tolist(),
+                               }, f)
 
                 
 
@@ -300,30 +309,35 @@ class VisionTransformer(timm.models.vision_transformer.VisionTransformer):
         # pos_embed = self.pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, x.size(-1)))
         # pos_embed = self.pos_embed(indices)
         # pos_embed = pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, pos_embed.size(-1)))
-        if torch.isnan(self.pos_embed).any():
+        if print_option and torch.isnan(self.pos_embed).any():
             print("pos_embed is nan before posembed")
 
-        pos_embed = self.pos_embed.expand(B, -1, -1)
-        if torch.isnan(pos_embed).any():
-            print("pos_embed is nan before gather")
-        pos_embed = pos_embed.gather(1, indices.unsqueeze(-1).expand(-1, -1, pos_embed.size(-1)))
-        if torch.isnan(pos_embed).any():
+        if print_option and torch.isnan(pos_embed).any():
             print("pos_embed is nan after gather")
 
-        if torch.isnan(x).any():
+        if print_option and torch.isnan(x).any():
             print("x is nan before posembed")
         x = x + pos_embed
-        if torch.isnan(x).any():
+        if print_option and torch.isnan(x).any():
             print("x is nan after posembed")
+        if print_option and torch.isinf(x).any():
+            print("x is inf after posembed")
 
         x = self.pos_drop(x)
 
-        for blk in self.blocks:
+        for idx, blk in enumerate(self.blocks):
             x = blk(x)
-
+            if print_option and torch.isnan(x).any():
+                print("x is nan at ", idx, "in blk")
+                print("pos_embed : ", pos_embed[0])
+            if print_option and torch.isinf(x).any():
+                print("x is inf at ", idx, "in blk")
+                print("pos_embed : ", pos_embed[0])
+            
         if self.global_pool:
             x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
             outcome = self.fc_norm(x)
+            
         else:
             x = self.norm(x)
             outcome = x[:, 0]
